@@ -1,7 +1,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Users, FileText, Send, TrendingUp } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+  
   const stats = [
     {
       title: "Total Contacts",
@@ -101,18 +105,28 @@ export default function Dashboard() {
             <CardDescription>Get started with your next campaign</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <button className="w-full flex items-center space-x-3 p-4 rounded-lg bg-gradient-to-r from-primary to-primary/90 text-primary-foreground hover:shadow-medium transition-all">
+            <Button 
+              onClick={() => navigate('/campaigns')}
+              className="w-full flex items-center space-x-3 p-4 h-auto bg-gradient-to-r from-primary to-primary/90 text-primary-foreground hover:shadow-medium transition-all"
+            >
               <Send className="w-5 h-5" />
               <span className="font-medium">Create New Campaign</span>
-            </button>
-            <button className="w-full flex items-center space-x-3 p-4 rounded-lg bg-gradient-to-r from-secondary to-secondary/90 text-secondary-foreground hover:shadow-medium transition-all">
+            </Button>
+            <Button 
+              onClick={() => navigate('/contacts')}
+              className="w-full flex items-center space-x-3 p-4 h-auto bg-gradient-to-r from-secondary to-secondary/90 text-secondary-foreground hover:shadow-medium transition-all"
+            >
               <Users className="w-5 h-5" />
               <span className="font-medium">Import Contacts</span>
-            </button>
-            <button className="w-full flex items-center space-x-3 p-4 rounded-lg border-2 border-border hover:bg-muted transition-all">
+            </Button>
+            <Button 
+              onClick={() => navigate('/templates')}
+              variant="outline"
+              className="w-full flex items-center space-x-3 p-4 h-auto border-2 hover:bg-muted transition-all"
+            >
               <FileText className="w-5 h-5" />
               <span className="font-medium">Browse Templates</span>
-            </button>
+            </Button>
           </CardContent>
         </Card>
       </div>

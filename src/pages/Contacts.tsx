@@ -7,20 +7,40 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Contacts() {
   const [searchQuery, setSearchQuery] = useState("");
-  const { toast } = useToast();
-
-  const contacts = [
+  const [contacts, setContacts] = useState([
     { id: 1, name: "John Doe", email: "john@example.com", status: "Active", added: "2024-01-15" },
     { id: 2, name: "Jane Smith", email: "jane@example.com", status: "Active", added: "2024-01-14" },
     { id: 3, name: "Bob Johnson", email: "bob@example.com", status: "Unsubscribed", added: "2024-01-13" },
     { id: 4, name: "Alice Williams", email: "alice@example.com", status: "Active", added: "2024-01-12" },
     { id: 5, name: "Charlie Brown", email: "charlie@example.com", status: "Active", added: "2024-01-11" },
-  ];
+  ]);
+  const { toast } = useToast();
 
   const handleImport = () => {
     toast({
       title: "CSV Import",
       description: "Contact import feature will be available soon.",
+    });
+  };
+
+  const handleExport = () => {
+    toast({
+      title: "Export Contacts",
+      description: "Exporting contacts to CSV...",
+    });
+  };
+
+  const handleAddContact = () => {
+    toast({
+      title: "Add Contact",
+      description: "Add contact form will be available soon.",
+    });
+  };
+
+  const handleEditContact = (contactId: number) => {
+    toast({
+      title: "Edit Contact",
+      description: `Editing contact #${contactId}`,
     });
   };
 
@@ -33,7 +53,7 @@ export default function Contacts() {
           <p className="text-muted-foreground mt-1">Manage your email contact lists</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" className="gap-2">
+          <Button onClick={handleExport} variant="outline" className="gap-2">
             <Download className="w-4 h-4" />
             Export
           </Button>
@@ -93,7 +113,7 @@ export default function Contacts() {
                   className="pl-9 w-full md:w-[300px]"
                 />
               </div>
-              <Button variant="outline" size="icon">
+              <Button onClick={handleAddContact} variant="outline" size="icon">
                 <UserPlus className="w-4 h-4" />
               </Button>
             </div>
@@ -128,7 +148,7 @@ export default function Contacts() {
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{contact.added}</td>
                       <td className="px-4 py-3">
-                        <Button variant="ghost" size="sm">Edit</Button>
+                        <Button onClick={() => handleEditContact(contact.id)} variant="ghost" size="sm">Edit</Button>
                       </td>
                     </tr>
                   ))}

@@ -75,10 +75,15 @@ export default function Contacts() {
         return;
       }
 
+      const contactData = {
+        ...formData,
+        name: formData.name.trim() || formData.email // Use email as name if name is empty
+      };
+
       if (editingContact) {
         const { error } = await supabase
           .from("contacts")
-          .update(formData)
+          .update(contactData)
           .eq("id", editingContact.id);
 
         if (error) throw error;
@@ -89,7 +94,7 @@ export default function Contacts() {
       } else {
         const { error } = await supabase
           .from("contacts")
-          .insert([{ ...formData, user_id: user.id }]);
+          .insert([{ ...contactData, user_id: user.id }]);
 
         if (error) throw error;
         toast({
@@ -220,18 +225,18 @@ export default function Contacts() {
 
       const contactsToInsert = parsedContacts.map(contact => ({
         user_id: user.id,
-        name: contact.name || "",
+        name: contact.name?.trim() || contact.email || "",
         email: contact.email || "",
         phone: contact.phone || null,
         company: contact.company || null,
         status: contact.status?.toLowerCase() === "unsubscribed" ? "unsubscribed" : "active",
         notes: contact.notes || null
-      })).filter(c => c.name && c.email);
+      })).filter(c => c.email); // Only require email
 
       if (contactsToInsert.length === 0) {
         toast({
           title: "Error",
-          description: "CSV must have 'name' and 'email' columns",
+          description: "CSV must have 'email' column with valid emails",
           variant: "destructive"
         });
         return;
@@ -464,12 +469,12 @@ export default function Contacts() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="name">Name *</Label>
+              <Label htmlFor="name">Name</Label>
               <Input
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="John Doe"
+                placeholder="John Doe (optional - will use email if empty)"
               />
             </div>
             <div className="grid gap-2">
@@ -527,7 +532,7 @@ export default function Contacts() {
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={!formData.name || !formData.email}>
+            <Button onClick={handleSubmit} disabled={!formData.email}>
               {editingContact ? "Update Contact" : "Add Contact"}
             </Button>
           </DialogFooter>

@@ -1,47 +1,214 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Upload, Search, UserPlus, Download } from "lucide-react";
+import { Upload, Search, UserPlus, Download, Pencil, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+
+interface Contact {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  phone?: string;
+  company?: string;
+  notes?: string;
+  created_at: string;
+}
 
 export default function Contacts() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [contacts, setContacts] = useState([
-    { id: 1, name: "John Doe", email: "john@example.com", status: "Active", added: "2024-01-15" },
-    { id: 2, name: "Jane Smith", email: "jane@example.com", status: "Active", added: "2024-01-14" },
-    { id: 3, name: "Bob Johnson", email: "bob@example.com", status: "Unsubscribed", added: "2024-01-13" },
-    { id: 4, name: "Alice Williams", email: "alice@example.com", status: "Active", added: "2024-01-12" },
-    { id: 5, name: "Charlie Brown", email: "charlie@example.com", status: "Active", added: "2024-01-11" },
-  ]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    company: "",
+    status: "active",
+    notes: ""
+  });
   const { toast } = useToast();
 
-  const handleImport = () => {
-    toast({
-      title: "CSV Import",
-      description: "Contact import feature will be available soon.",
-    });
+  useEffect(() => {
+    fetchContacts();
+  }, []);
+
+  const fetchContacts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setContacts(data || []);
+    } catch (error) {
+      console.error("Error fetching contacts:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load contacts",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleExport = () => {
-    toast({
-      title: "Export Contacts",
-      description: "Exporting contacts to CSV...",
+  const handleSubmit = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Error",
+          description: "You must be logged in",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (editingContact) {
+        const { error } = await supabase
+          .from("contacts")
+          .update(formData)
+          .eq("id", editingContact.id);
+
+        if (error) throw error;
+        toast({
+          title: "Success",
+          description: "Contact updated successfully"
+        });
+      } else {
+        const { error } = await supabase
+          .from("contacts")
+          .insert([{ ...formData, user_id: user.id }]);
+
+        if (error) throw error;
+        toast({
+          title: "Success",
+          description: "Contact added successfully"
+        });
+      }
+
+      setIsDialogOpen(false);
+      resetForm();
+      fetchContacts();
+    } catch (error) {
+      console.error("Error saving contact:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save contact",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this contact?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("contacts")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+      toast({
+        title: "Success",
+        description: "Contact deleted successfully"
+      });
+      fetchContacts();
+    } catch (error) {
+      console.error("Error deleting contact:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete contact",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const openEditDialog = (contact: Contact) => {
+    setEditingContact(contact);
+    setFormData({
+      name: contact.name,
+      email: contact.email,
+      phone: contact.phone || "",
+      company: contact.company || "",
+      status: contact.status,
+      notes: contact.notes || ""
+    });
+    setIsDialogOpen(true);
+  };
+
+  const resetForm = () => {
+    setEditingContact(null);
+    setFormData({
+      name: "",
+      email: "",
+      phone: "",
+      company: "",
+      status: "active",
+      notes: ""
     });
   };
 
   const handleAddContact = () => {
+    resetForm();
+    setIsDialogOpen(true);
+  };
+
+  const handleImport = () => {
     toast({
-      title: "Add Contact",
-      description: "Add contact form will be available soon.",
+      title: "CSV Import",
+      description: "CSV import feature coming soon",
     });
   };
 
-  const handleEditContact = (contactId: number) => {
+  const handleExport = () => {
+    const csv = [
+      ["Name", "Email", "Phone", "Company", "Status", "Notes", "Created At"],
+      ...contacts.map(c => [
+        c.name,
+        c.email,
+        c.phone || "",
+        c.company || "",
+        c.status,
+        c.notes || "",
+        new Date(c.created_at).toLocaleDateString()
+      ])
+    ].map(row => row.join(",")).join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "contacts.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+    
     toast({
-      title: "Edit Contact",
-      description: `Editing contact #${contactId}`,
+      title: "Success",
+      description: "Contacts exported to CSV"
     });
+  };
+
+  const filteredContacts = contacts.filter(contact =>
+    contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    contact.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const stats = {
+    total: contacts.length,
+    active: contacts.filter(c => c.status === "active").length,
+    unsubscribed: contacts.filter(c => c.status === "unsubscribed").length
   };
 
   return (
@@ -71,8 +238,8 @@ export default function Contacts() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Contacts</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2,543</div>
-            <p className="text-xs text-muted-foreground mt-1">+180 this month</p>
+            <div className="text-2xl font-bold">{stats.total}</div>
+            <p className="text-xs text-muted-foreground mt-1">All contacts</p>
           </CardContent>
         </Card>
         <Card className="shadow-soft">
@@ -80,8 +247,10 @@ export default function Contacts() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Active Subscribers</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2,401</div>
-            <p className="text-xs text-muted-foreground mt-1">94.4% of total</p>
+            <div className="text-2xl font-bold">{stats.active}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.total > 0 ? `${((stats.active / stats.total) * 100).toFixed(1)}% of total` : "0% of total"}
+            </p>
           </CardContent>
         </Card>
         <Card className="shadow-soft">
@@ -89,8 +258,10 @@ export default function Contacts() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Unsubscribed</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">142</div>
-            <p className="text-xs text-muted-foreground mt-1">5.6% of total</p>
+            <div className="text-2xl font-bold">{stats.unsubscribed}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.total > 0 ? `${((stats.unsubscribed / stats.total) * 100).toFixed(1)}% of total` : "0% of total"}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -127,37 +298,153 @@ export default function Contacts() {
                   <tr className="border-b bg-muted/50">
                     <th className="px-4 py-3 text-left text-sm font-medium">Name</th>
                     <th className="px-4 py-3 text-left text-sm font-medium">Email</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium">Company</th>
                     <th className="px-4 py-3 text-left text-sm font-medium">Status</th>
                     <th className="px-4 py-3 text-left text-sm font-medium">Date Added</th>
                     <th className="px-4 py-3 text-left text-sm font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {contacts.map((contact) => (
-                    <tr key={contact.id} className="border-b hover:bg-muted/50 transition-colors">
-                      <td className="px-4 py-3 text-sm font-medium">{contact.name}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{contact.email}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          contact.status === "Active" 
-                            ? "bg-secondary/10 text-secondary" 
-                            : "bg-destructive/10 text-destructive"
-                        }`}>
-                          {contact.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{contact.added}</td>
-                      <td className="px-4 py-3">
-                        <Button onClick={() => handleEditContact(contact.id)} variant="ghost" size="sm">Edit</Button>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                        Loading contacts...
                       </td>
                     </tr>
-                  ))}
+                  ) : filteredContacts.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                        {searchQuery ? "No contacts found matching your search" : "No contacts yet. Add your first contact!"}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredContacts.map((contact) => (
+                      <tr key={contact.id} className="border-b hover:bg-muted/50 transition-colors">
+                        <td className="px-4 py-3 text-sm font-medium">{contact.name}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{contact.email}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{contact.company || "-"}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            contact.status === "active" 
+                              ? "bg-secondary/10 text-secondary" 
+                              : "bg-destructive/10 text-destructive"
+                          }`}>
+                            {contact.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                          {new Date(contact.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2">
+                            <Button 
+                              onClick={() => openEditDialog(contact)} 
+                              variant="ghost" 
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              onClick={() => handleDelete(contact.id)} 
+                              variant="ghost" 
+                              size="sm"
+                              className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>{editingContact ? "Edit Contact" : "Add New Contact"}</DialogTitle>
+            <DialogDescription>
+              {editingContact ? "Update the contact information below" : "Enter the contact details below"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">Name *</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="John Doe"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="john@example.com"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="phone">Phone</Label>
+              <Input
+                id="phone"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="+1 234 567 8900"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="company">Company</Label>
+              <Input
+                id="company"
+                value={formData.company}
+                onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                placeholder="Acme Inc."
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="status">Status</Label>
+              <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="unsubscribed">Unsubscribed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Additional notes..."
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} disabled={!formData.name || !formData.email}>
+              {editingContact ? "Update Contact" : "Add Contact"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

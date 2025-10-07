@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ export default function Contacts() {
     status: "active",
     notes: ""
   });
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -166,10 +167,97 @@ export default function Contacts() {
   };
 
   const handleImport = () => {
-    toast({
-      title: "CSV Import",
-      description: "CSV import feature coming soon"
+    fileInputRef.current?.click();
+  };
+
+  const parseCSV = (text: string): any[] => {
+    const lines = text.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return [];
+    
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const rows = lines.slice(1);
+    
+    return rows.map(row => {
+      const values = row.split(',').map(v => v.trim());
+      const contact: any = {};
+      
+      headers.forEach((header, index) => {
+        if (values[index]) {
+          contact[header] = values[index];
+        }
+      });
+      
+      return contact;
     });
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsedContacts = parseCSV(text);
+      
+      if (parsedContacts.length === 0) {
+        toast({
+          title: "Error",
+          description: "No valid contacts found in CSV",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Error",
+          description: "You must be logged in",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const contactsToInsert = parsedContacts.map(contact => ({
+        user_id: user.id,
+        name: contact.name || "",
+        email: contact.email || "",
+        phone: contact.phone || null,
+        company: contact.company || null,
+        status: contact.status?.toLowerCase() === "unsubscribed" ? "unsubscribed" : "active",
+        notes: contact.notes || null
+      })).filter(c => c.name && c.email);
+
+      if (contactsToInsert.length === 0) {
+        toast({
+          title: "Error",
+          description: "CSV must have 'name' and 'email' columns",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from("contacts")
+        .insert(contactsToInsert);
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: `Imported ${contactsToInsert.length} contacts`
+      });
+      
+      fetchContacts();
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (error) {
+      console.error("Error importing contacts:", error);
+      toast({
+        title: "Error",
+        description: "Failed to import contacts",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleExport = () => {
@@ -445,6 +533,15 @@ export default function Contacts() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Hidden file input for CSV import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
     </div>
   );
 }

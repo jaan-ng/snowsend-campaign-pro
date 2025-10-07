@@ -168,7 +168,7 @@ export default function Contacts() {
   const handleImport = () => {
     toast({
       title: "CSV Import",
-      description: "CSV import feature coming soon",
+      description: "CSV import feature coming soon"
     });
   };
 

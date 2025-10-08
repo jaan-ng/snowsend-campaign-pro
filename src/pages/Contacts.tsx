@@ -175,6 +175,31 @@ export default function Contacts() {
     fileInputRef.current?.click();
   };
 
+  // Normalize column names to handle common variations
+  const normalizeColumnName = (header: string): string => {
+    const normalized = header.toLowerCase().trim();
+    
+    // Email variations
+    if (normalized.match(/^e-?mail(\s+address)?$/)) return 'email';
+    
+    // Name variations
+    if (normalized.match(/^(full\s+)?name|contact(\s+name)?$/)) return 'name';
+    
+    // Phone variations
+    if (normalized.match(/^(phone|mobile|telephone)(\s+number)?$/)) return 'phone';
+    
+    // Company variations
+    if (normalized.match(/^(company|organization|org)(\s+name)?$/)) return 'company';
+    
+    // Status variations
+    if (normalized.match(/^status$/)) return 'status';
+    
+    // Notes variations
+    if (normalized.match(/^notes?|comments?$/)) return 'notes';
+    
+    return normalized;
+  };
+
   const parseCSV = (text: string): any[] => {
     // Handle different line endings (Windows/Mac/Unix)
     const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(line => line.trim());
@@ -208,7 +233,12 @@ export default function Contacts() {
       return result;
     };
     
-    const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/^["']|["']$/g, ''));
+    const rawHeaders = parseLine(lines[0]).map(h => h.replace(/^["']|["']$/g, ''));
+    const headers = rawHeaders.map(normalizeColumnName);
+    
+    console.log('📋 CSV Columns detected:', rawHeaders);
+    console.log('✅ Mapped to fields:', headers);
+    
     const rows = lines.slice(1);
     
     return rows.map(row => {

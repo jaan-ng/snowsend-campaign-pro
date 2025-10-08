@@ -176,24 +176,59 @@ export default function Contacts() {
   };
 
   const parseCSV = (text: string): any[] => {
-    const lines = text.split('\n').filter(line => line.trim());
+    // Handle different line endings (Windows/Mac/Unix)
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
     
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const parseLine = (line: string): string[] => {
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        const nextChar = line[i + 1];
+        
+        if (char === '"') {
+          // Handle escaped quotes ("")
+          if (inQuotes && nextChar === '"') {
+            current += '"';
+            i++; // Skip next quote
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
+    
+    const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/^["']|["']$/g, ''));
     const rows = lines.slice(1);
     
     return rows.map(row => {
-      const values = row.split(',').map(v => v.trim());
+      const values = parseLine(row);
       const contact: any = {};
       
       headers.forEach((header, index) => {
-        if (values[index]) {
-          contact[header] = values[index];
+        const value = values[index]?.replace(/^["']|["']$/g, '').trim();
+        if (value) {
+          contact[header] = value;
         }
       });
       
       return contact;
     });
+  };
+
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -204,10 +239,15 @@ export default function Contacts() {
       const text = await file.text();
       const parsedContacts = parseCSV(text);
       
+      console.log('📊 CSV Parse Results:', {
+        totalRows: parsedContacts.length,
+        sample: parsedContacts.slice(0, 3)
+      });
+      
       if (parsedContacts.length === 0) {
         toast({
           title: "Error",
-          description: "No valid contacts found in CSV",
+          description: "No valid rows found in CSV file",
           variant: "destructive"
         });
         return;
@@ -223,20 +263,73 @@ export default function Contacts() {
         return;
       }
 
-      const contactsToInsert = parsedContacts.map(contact => ({
-        user_id: user.id,
-        name: contact.name?.trim() || contact.email || "",
-        email: contact.email || "",
-        phone: contact.phone || null,
-        company: contact.company || null,
-        status: contact.status?.toLowerCase() === "unsubscribed" ? "unsubscribed" : "active",
-        notes: contact.notes || null
-      })).filter(c => c.email); // Only require email
+      // Track import results
+      const importResults = {
+        successful: [] as any[],
+        skipped: [] as any[],
+        reasons: {
+          noEmail: 0,
+          invalidEmail: 0,
+          duplicateEmail: 0
+        }
+      };
 
-      if (contactsToInsert.length === 0) {
+      const emailsSeen = new Set<string>();
+
+      parsedContacts.forEach((contact, index) => {
+        const email = contact.email?.trim().toLowerCase();
+        
+        // Skip if no email
+        if (!email) {
+          importResults.skipped.push(contact);
+          importResults.reasons.noEmail++;
+          return;
+        }
+
+        // Skip if invalid email format
+        if (!isValidEmail(email)) {
+          importResults.skipped.push(contact);
+          importResults.reasons.invalidEmail++;
+          console.log(`❌ Row ${index + 2}: Invalid email format: "${email}"`);
+          return;
+        }
+
+        // Skip duplicate emails in the same import
+        if (emailsSeen.has(email)) {
+          importResults.skipped.push(contact);
+          importResults.reasons.duplicateEmail++;
+          return;
+        }
+
+        emailsSeen.add(email);
+
+        importResults.successful.push({
+          user_id: user.id,
+          name: contact.name?.trim() || email,
+          email: email,
+          phone: contact.phone?.trim() || null,
+          company: contact.company?.trim() || null,
+          status: contact.status?.toLowerCase() === "unsubscribed" ? "unsubscribed" : "active",
+          notes: contact.notes?.trim() || null
+        });
+      });
+
+      console.log('📈 Import Statistics:', {
+        parsed: parsedContacts.length,
+        successful: importResults.successful.length,
+        skipped: importResults.skipped.length,
+        reasons: importResults.reasons
+      });
+
+      if (importResults.successful.length === 0) {
+        const reasons = [];
+        if (importResults.reasons.noEmail > 0) reasons.push(`${importResults.reasons.noEmail} missing email`);
+        if (importResults.reasons.invalidEmail > 0) reasons.push(`${importResults.reasons.invalidEmail} invalid email`);
+        if (importResults.reasons.duplicateEmail > 0) reasons.push(`${importResults.reasons.duplicateEmail} duplicate`);
+        
         toast({
-          title: "Error",
-          description: "CSV must have 'email' column with valid emails",
+          title: "Import Failed",
+          description: `No valid contacts found. Skipped ${importResults.skipped.length} rows: ${reasons.join(', ')}`,
           variant: "destructive"
         });
         return;
@@ -244,22 +337,27 @@ export default function Contacts() {
 
       const { error } = await supabase
         .from("contacts")
-        .insert(contactsToInsert);
+        .insert(importResults.successful);
 
       if (error) throw error;
 
+      // Detailed success message
+      const successMsg = importResults.skipped.length > 0
+        ? `✓ Imported ${importResults.successful.length} contacts, ⚠ Skipped ${importResults.skipped.length} rows`
+        : `Successfully imported ${importResults.successful.length} contacts`;
+
       toast({
-        title: "Success",
-        description: `Imported ${contactsToInsert.length} contacts`
+        title: "Import Complete",
+        description: successMsg
       });
       
       fetchContacts();
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
-      console.error("Error importing contacts:", error);
+      console.error("❌ Error importing contacts:", error);
       toast({
         title: "Error",
-        description: "Failed to import contacts",
+        description: error instanceof Error ? error.message : "Failed to import contacts",
         variant: "destructive"
       });
     }
